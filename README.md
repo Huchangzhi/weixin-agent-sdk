@@ -17,19 +17,38 @@ packages/
 
 [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) 是一个开放的 Agent 通信协议。如果你已有兼容 ACP 的 agent，可以直接通过 [`weixin-acp`](https://www.npmjs.com/package/weixin-acp) 接入微信，无需编写任何代码。
 
-```bash
-# 扫码登录
-npx weixin-acp login
 
-# 启动（-- 后面跟 ACP agent 的启动命令）
-npx weixin-acp start -- claude-agent-acp # https://github.com/zed-industries/claude-agent-acp
-npx weixin-acp start -- codex-acp        # https://github.com/zed-industries/codex-acp
-npx weixin-acp start -- kimi acp         # https://moonshotai.github.io/kimi-cli/zh/guides/getting-started.html#%E5%AE%89%E8%A3%85
+### 扫码登录
+
+```bash
+npx weixin-acp login
+```
+
+### Claude Code
+
+> 需要先安装 [claude-agent-acp](https://github.com/zed-industries/claude-agent-acp)
+
+```bash
+npx weixin-acp start -- claude-agent-acp
+```
+
+### Codex
+
+> 需要先安装 [codex-acp](https://github.com/zed-industries/codex-acp)
+
+```bash
+npx weixin-acp start -- codex-acp
+```
+
+### kimi-cli
+
+```bash
+npx weixin-acp start -- kimi acp
 ```
 
 `--` 后面的部分就是你的 ACP agent 启动命令，`weixin-acp` 会自动以子进程方式启动它，通过 JSON-RPC over stdio 进行通信。
 
-更多 ACP agent 请参考 [ACP agent 列表](https://agentclientprotocol.com/get-started/agents)。
+更多 ACP 兼容 agent 请参考 [ACP agent 列表](https://agentclientprotocol.com/get-started/agents)。
 
 ## 自定义 Agent
 
