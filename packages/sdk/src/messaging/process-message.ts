@@ -15,7 +15,8 @@ import { setContextToken, bodyFromItemList, isMediaItem } from "./inbound.js";
 import { sendWeixinErrorNotice } from "./error-notice.js";
 import { sendWeixinMediaFile } from "./send-media.js";
 import { markdownToPlainText, sendMessageWeixin } from "./send.js";
-import { handleSlashCommand } from "./slash-commands.js";
+import { handleSlashCommand, type SlashCommandResult } from "./slash-commands.js";
+import { registerOngoingRequest, unregisterOngoingRequest, hasOngoingRequest, isConversationStopped } from "./ongoing-requests.js";
 
 const MEDIA_TEMP_DIR = "/tmp/weixin-agent/media";
 
@@ -107,10 +108,19 @@ export async function processOneMessage(
 ): Promise<void> {
   const receivedAt = Date.now();
   const textBody = extractTextBody(full.item_list);
+  const conversationId = full.from_user_id ?? "";
+
+  logger.info(`[processOneMessage] received message from=${conversationId} text=${textBody.slice(0, 50)}`);
+
+  // Check if this conversation was stopped by /stop command
+  if (isConversationStopped(conversationId)) {
+    logger.info(`[processOneMessage] conversation ${conversationId} was stopped, skipping`);
+    return;
+  }
 
   // --- Slash commands ---
   if (textBody.startsWith("/")) {
-    const conversationId = full.from_user_id ?? "";
+    logger.info(`[processOneMessage] detected slash command: ${textBody.slice(0, 50)}`);
     const slashResult = await handleSlashCommand(
       textBody,
       {
@@ -122,12 +132,15 @@ export async function processOneMessage(
         log: deps.log,
         errLog: deps.errLog,
         onClear: () => deps.agent.clearSession?.(conversationId),
-        onStop: () => deps.agent.stop?.(conversationId),
       },
       receivedAt,
       full.create_time_ms,
     );
-    if (slashResult.handled) return;
+    logger.info(`[processOneMessage] slash command result: handled=${slashResult.handled} skipAgentCall=${slashResult.skipAgentCall}`);
+    if (slashResult.handled && slashResult.skipAgentCall) {
+      logger.info(`[processOneMessage] slash command handled, skipping agent call`);
+      return;
+    }
   }
 
   // --- Store context token ---
@@ -172,7 +185,7 @@ export async function processOneMessage(
 
   // --- Build ChatRequest ---
   const request: ChatRequest = {
-    conversationId: full.from_user_id ?? "",
+    conversationId,
     text: bodyFromItemList(full.item_list),
     media,
   };
@@ -199,7 +212,9 @@ export async function processOneMessage(
 
   // --- Call agent & send reply ---
   try {
+    logger.info(`[processOneMessage] calling agent.chat() for conversation=${conversationId}`);
     const response = await deps.agent.chat(request);
+    logger.info(`[processOneMessage] agent.chat() completed for conversation=${conversationId}`);
 
     if (response.media) {
       let filePath: string;
@@ -220,6 +235,7 @@ export async function processOneMessage(
         cdnBaseUrl: deps.cdnBaseUrl,
       });
     } else if (response.text) {
+      logger.info(`[processOneMessage] sending response text (len=${response.text.length})`);
       await sendMessageWeixin({
         to,
         text: markdownToPlainText(response.text),
@@ -227,6 +243,12 @@ export async function processOneMessage(
       });
     }
   } catch (err) {
+    // Check if this is a "stopped" error (from /stop command)
+    if (err instanceof Error && err.message === 'stopped') {
+      logger.info(`[processOneMessage] Request was stopped for conversation=${conversationId}`);
+      return;
+    }
+    
     logger.error(`processOneMessage: agent or send failed: ${err instanceof Error ? err.stack ?? err.message : JSON.stringify(err)}`);
     void sendWeixinErrorNotice({
       to,

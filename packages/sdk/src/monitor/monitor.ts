@@ -6,11 +6,20 @@ import { processOneMessage } from "../messaging/process-message.js";
 import { getSyncBufFilePath, loadGetUpdatesBuf, saveGetUpdatesBuf } from "../storage/sync-buf.js";
 import { logger } from "../util/logger.js";
 import { redactBody } from "../util/redact.js";
+import { 
+  registerOngoingRequest, 
+  unregisterOngoingRequest, 
+  stopOngoingRequest,
+  hasOngoingRequest,
+} from "../messaging/ongoing-requests.js";
 
 const DEFAULT_LONG_POLL_TIMEOUT_MS = 35_000;
 const MAX_CONSECUTIVE_FAILURES = 3;
 const BACKOFF_DELAY_MS = 30_000;
 const RETRY_DELAY_MS = 2_000;
+
+/** Track conversations where /stop was sent - cleared after the current request completes */
+const stoppedConversations = new Set<string>();
 
 export type MonitorWeixinOpts = {
   baseUrl: string;
@@ -22,6 +31,22 @@ export type MonitorWeixinOpts = {
   longPollTimeoutMs?: number;
   log?: (msg: string) => void;
 };
+
+/**
+ * Check if a message is a /stop command
+ */
+function isStopCommand(full: { item_list?: Array<{ type: number; text_item?: { text?: string } }> }): boolean {
+  const itemList = full.item_list;
+  if (!itemList?.length) return false;
+  
+  for (const item of itemList) {
+    if (item.type === 1 && item.text_item?.text) { // 1 = text type
+      const text = String(item.text_item.text).trim();
+      return text.toLowerCase() === "/stop";
+    }
+  }
+  return false;
+}
 
 /**
  * Long-poll loop: getUpdates → process message → call agent → send reply.
@@ -61,6 +86,10 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
 
   let nextTimeoutMs = longPollTimeoutMs ?? DEFAULT_LONG_POLL_TIMEOUT_MS;
   let consecutiveFailures = 0;
+
+  // Track the currently processing message promise
+  let currentProcessingPromise: Promise<void> | null = null;
+  let currentProcessingConversationId: string | null = null;
 
   while (!abortSignal?.aborted) {
     try {
@@ -117,15 +146,76 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
       }
 
       const list = resp.msgs ?? [];
+      
+      // First pass: register ongoing requests for ALL messages first
+      const messagesToProcess: Array<{ full: typeof list[0], cachedConfig: any }> = [];
       for (const full of list) {
+        const fromUserId = full.from_user_id ?? "";
+        const textBody = full.item_list?.find(i => i.type === 1)?.text_item?.text ?? "";
+        
+        // Skip if this conversation is already stopped
+        if (stoppedConversations.has(fromUserId)) {
+          log(`[monitor] SKIP (pre): conversation ${fromUserId} was stopped`);
+          continue;
+        }
+        
+        // Skip /stop commands from registration
+        if (String(textBody).trim().toLowerCase() === "/stop") {
+          continue;
+        }
+        
+        // Register ongoing request
+        const abortController = new AbortController();
+        registerOngoingRequest(fromUserId, abortController);
+        log(`[monitor] registered ongoing request for=${fromUserId}`);
+        
+        // Cache config for later
+        const cachedConfig = await configManager.getForUser(fromUserId, full.context_token);
+        messagesToProcess.push({ full, cachedConfig });
+      }
+      
+      // Second pass: check for /stop commands and stop ongoing requests
+      for (const full of list) {
+        if (isStopCommand(full)) {
+          const fromUserId = full.from_user_id ?? "";
+          stoppedConversations.add(fromUserId);
+          log(`[monitor] detected /stop from=${fromUserId}`);
+          
+          // Stop the ongoing request if exists
+          if (hasOngoingRequest(fromUserId)) {
+            log(`[monitor] stopping ongoing request for=${fromUserId}`);
+            stopOngoingRequest(fromUserId);
+            
+            if (agent.stop) {
+              log(`[monitor] calling agent.stop for=${fromUserId}`);
+              agent.stop(fromUserId);
+            }
+          } else {
+            log(`[monitor] no ongoing request to stop for=${fromUserId}`);
+          }
+        }
+      }
+      log(`[monitor] stoppedConversations=[${Array.from(stoppedConversations).join(", ")}]`);
+
+      // Third pass: process messages
+      for (const { full, cachedConfig } of messagesToProcess) {
+        const fromUserId = full.from_user_id ?? "";
+        const textBody = full.item_list?.find(i => i.type === 1)?.text_item?.text ?? "";
+        log(`[monitor] processing: from=${fromUserId} text=${String(textBody).slice(0, 30)}`);
+        
+        // Double-check if this conversation was stopped
+        if (stoppedConversations.has(fromUserId)) {
+          log(`[monitor] SKIP: conversation ${fromUserId} was stopped, unregistering`);
+          unregisterOngoingRequest(fromUserId);
+          continue;
+        }
+
         aLog.info(
-          `inbound: from=${full.from_user_id} types=${full.item_list?.map((i) => i.type).join(",") ?? "none"}`,
+          `inbound: from=${fromUserId} types=${full.item_list?.map((i) => i.type).join(",") ?? "none"}`,
         );
 
-        const fromUserId = full.from_user_id ?? "";
-        const cachedConfig = await configManager.getForUser(fromUserId, full.context_token);
-
-        await processOneMessage(full, {
+        currentProcessingConversationId = fromUserId;
+        currentProcessingPromise = processOneMessage(full, {
           accountId,
           agent,
           baseUrl,
@@ -134,6 +224,12 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
           typingTicket: cachedConfig.typingTicket,
           log,
           errLog,
+        }).finally(() => {
+          currentProcessingPromise = null;
+          currentProcessingConversationId = null;
+          unregisterOngoingRequest(fromUserId);
+          stoppedConversations.delete(fromUserId);
+          log(`[monitor] completed and cleared for ${fromUserId}`);
         });
       }
     } catch (err) {

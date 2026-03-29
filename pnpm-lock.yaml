@@ -1,7 +1,7 @@
 lockfileVersion: '9.0'
 
 settings:
-  autoInstallPeers: true
+  autoInstallPeers: false
   excludeLinksFromLockfile: false
 
 importers:
@@ -517,39 +517,9 @@ packages:
     resolution: {integrity: sha512-Ng6Ht35u0vZA+rH/5fnFAKKKHTidKciuwAMDS/nYrOHnCh5/d7E3Xa2YFtNrDKYraZzAjwTXDRVqH3Zp5uarlA==}
     hasBin: true
 
-  '@zed-industries/codex-acp-darwin-arm64@0.10.0':
-    resolution: {integrity: sha512-zlIZH+X2aEfxC5UgnIoYbX0cG3/MpRUsQAGJbrcBbgKp0mhuBFtMJHZ426JC5rb3pv8amo1MmDeARZUQ99U/CQ==}
-    cpu: [arm64]
-    os: [darwin]
-    hasBin: true
-
-  '@zed-industries/codex-acp-darwin-x64@0.10.0':
-    resolution: {integrity: sha512-TFMF9YqfWplnYpWRaUauRbtps1ow1S47MVcBv21/Sd55gRMWWYWSogRLDyAcoMC4y9pdI2bYhx33u7jYhJnj5w==}
-    cpu: [x64]
-    os: [darwin]
-    hasBin: true
-
-  '@zed-industries/codex-acp-linux-arm64@0.10.0':
-    resolution: {integrity: sha512-tIm0uGKZuirZyqx9KAgIgh6cimVXdh+BMTFyUfH1xnez5Y3B6oFxzup/ZIP34OZ/W59Cnfi4wcIL3No0VV6Kmw==}
-    cpu: [arm64]
-    os: [linux]
-    hasBin: true
-
-  '@zed-industries/codex-acp-linux-x64@0.10.0':
-    resolution: {integrity: sha512-oiiN35wsecX1OwesV/KIu72o1OSw+OWFL86vQUUZTdfMXr9eyYFP1uZYLMxIx+tkhlJnm7KHC5L4raDg/MLVtA==}
-    cpu: [x64]
-    os: [linux]
-    hasBin: true
-
   '@zed-industries/codex-acp-win32-arm64@0.10.0':
     resolution: {integrity: sha512-dfybabjibQQpXUs9TjwLjg+mrj8tGSopVcwkFy8u3XG4hrBZVCri91dtVhm7hs98lZlawxwiiPuj4Pmg+4hHyQ==}
     cpu: [arm64]
-    os: [win32]
-    hasBin: true
-
-  '@zed-industries/codex-acp-win32-x64@0.10.0':
-    resolution: {integrity: sha512-xCm3xsE3lD66DlbaLKBqHahPY1Lhb+rGu2IIq60qUsBGiYcSXtpRjQ1LXI/Sym6iCKrPo+eQP0j6rg7CPh1AGw==}
-    cpu: [x64]
     os: [win32]
     hasBin: true
 
@@ -1221,32 +1191,12 @@ snapshots:
       '@anthropic-ai/claude-agent-sdk': 0.2.83(zod@4.3.6)
       zod: 4.3.6
 
-  '@zed-industries/codex-acp-darwin-arm64@0.10.0':
-    optional: true
-
-  '@zed-industries/codex-acp-darwin-x64@0.10.0':
-    optional: true
-
-  '@zed-industries/codex-acp-linux-arm64@0.10.0':
-    optional: true
-
-  '@zed-industries/codex-acp-linux-x64@0.10.0':
-    optional: true
-
   '@zed-industries/codex-acp-win32-arm64@0.10.0':
-    optional: true
-
-  '@zed-industries/codex-acp-win32-x64@0.10.0':
     optional: true
 
   '@zed-industries/codex-acp@0.10.0':
     optionalDependencies:
-      '@zed-industries/codex-acp-darwin-arm64': 0.10.0
-      '@zed-industries/codex-acp-darwin-x64': 0.10.0
-      '@zed-industries/codex-acp-linux-arm64': 0.10.0
-      '@zed-industries/codex-acp-linux-x64': 0.10.0
       '@zed-industries/codex-acp-win32-arm64': 0.10.0
-      '@zed-industries/codex-acp-win32-x64': 0.10.0
 
   abort-controller@3.0.0:
     dependencies:

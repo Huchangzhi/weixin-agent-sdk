@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import { execSync } from "node:child_process";
 import spawn from "cross-spawn";
 import { Readable, Writable } from "node:stream";
 
@@ -32,6 +33,8 @@ export class AcpConnection {
   private connection: ClientSideConnection | null = null;
   private ready = false;
   private collectors = new Map<SessionId, ResponseCollector>();
+  /** Track ongoing prompts per session for cancellation */
+  private ongoingPrompts = new Map<SessionId, { abortController: AbortController; reject?: (err: Error) => void }>();
 
   private onExit?: () => void;
 
@@ -40,11 +43,94 @@ export class AcpConnection {
   }
 
   registerCollector(sessionId: SessionId, collector: ResponseCollector): void {
+    log(`registerCollector: session=${sessionId}`);
     this.collectors.set(sessionId, collector);
   }
 
   unregisterCollector(sessionId: SessionId): void {
+    log(`unregisterCollector: session=${sessionId}`);
     this.collectors.delete(sessionId);
+    this.ongoingPrompts.delete(sessionId);
+  }
+
+  registerOngoingPrompt(sessionId: SessionId, abortController: AbortController): void {
+    const entry = { abortController };
+    this.ongoingPrompts.set(sessionId, entry);
+    
+    // Listen for abort signal to reject the prompt
+    abortController.signal.addEventListener('abort', () => {
+      log(`abort signal received for session=${sessionId}`);
+      entry.reject?.(new Error('stopped'));
+    }, { once: true });
+  }
+
+  unregisterOngoingPrompt(sessionId: SessionId): void {
+    this.ongoingPrompts.delete(sessionId);
+  }
+
+  /**
+   * Kill the subprocess - exposed for external stop command
+   * This kills the entire process tree to ensure complete stop
+   */
+  killProcess(): void {
+    if (this.process) {
+      log("killProcess: killing subprocess and all children");
+      
+      // On Windows, use taskkill to kill the entire process tree
+      if (process.platform === 'win32') {
+        try {
+          const pid = this.process.pid;
+          if (pid) {
+            execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'ignore' });
+            log(`killProcess: killed process tree for pid=${pid}`);
+          }
+        } catch (err) {
+          log(`killProcess: taskkill failed, trying kill(): ${String(err)}`);
+          this.process.kill();
+        }
+      } else {
+        // On Unix, send SIGTERM to the process group
+        try {
+          process.kill(-this.process.pid!, 'SIGTERM');
+          log(`killProcess: killed process group for pid=${this.process.pid}`);
+        } catch {
+          this.process.kill();
+        }
+      }
+      
+      this.process = null;
+    }
+    this.ready = false;
+    this.connection = null;
+    
+    // Clear all state so next ensureReady() will restart fresh
+    this.ongoingPrompts.clear();
+    this.collectors.clear();
+    
+    // Trigger onExit callback
+    this.onExit?.();
+  }
+
+  /**
+   * Cancel an ongoing prompt for a session (used by /stop command)
+   */
+  cancelPrompt(sessionId: SessionId): boolean {
+    log(`cancelPrompt called: session=${sessionId}`);
+    
+    const ongoing = this.ongoingPrompts.get(sessionId);
+    if (!ongoing) {
+      log(`cancelPrompt: no ongoing prompt found for session=${sessionId}`);
+      return false;
+    }
+    
+    log(`cancelPrompt: aborting prompt for session=${sessionId}`);
+    ongoing.abortController.abort();
+    // Don't delete - let the abort handler clean up
+
+    // Kill and restart the subprocess to ensure clean state
+    log(`cancelPrompt: killing subprocess for session=${sessionId}`);
+    this.killProcess();
+    return true;
   }
 
   /**
@@ -70,6 +156,17 @@ export class AcpConnection {
       this.ready = false;
       this.connection = null;
       this.process = null;
+      
+      // Reject all ongoing prompts
+      for (const [sessionId, ongoing] of this.ongoingPrompts) {
+        log(`rejecting ongoing prompt for session=${sessionId} due to subprocess exit`);
+        ongoing.reject?.(new Error(`subprocess exited (code=${code})`));
+      }
+      this.ongoingPrompts.clear();
+      
+      // Clear all collectors to stop receiving updates
+      this.collectors.clear();
+      
       this.onExit?.();
     });
 
@@ -133,6 +230,7 @@ export class AcpConnection {
   dispose(): void {
     this.ready = false;
     this.collectors.clear();
+    this.ongoingPrompts.clear();
     if (this.process) {
       this.process.kill();
       this.process = null;

@@ -17,6 +17,8 @@ import { isLoggedIn, login, logout, start } from "weixin-agent-sdk";
 
 import { AcpAgent } from "./src/acp-agent.js";
 
+const PKG_VERSION = "0.6.0-mod"; // 修改版，支持/stop 打断
+
 /** Built-in agent shortcuts */
 const BUILTIN_AGENTS: Record<string, { command: string }> = {
   "claude-code": { command: "claude-agent-acp" },
@@ -65,8 +67,8 @@ async function main() {
   if (command === "start") {
     const ddIndex = process.argv.indexOf("--");
     if (ddIndex === -1 || ddIndex + 1 >= process.argv.length) {
-      console.error("错误: 请在 -- 后指定 ACP agent 启动命令");
-      console.error("示例: npx weixin-acp start -- codex-acp");
+      console.error("错误：请在 -- 后指定 ACP agent 启动命令");
+      console.error("示例：npx weixin-acp start -- codex-acp");
       process.exit(1);
     }
 
@@ -81,7 +83,7 @@ async function main() {
     return;
   }
 
-  console.log(`weixin-acp — 微信 + ACP 适配器
+  console.log(`weixin-acp — 微信 + ACP 适配器 [版本：${PKG_VERSION}]
 
 用法:
   npx weixin-acp login                          扫码登录微信
@@ -95,10 +97,14 @@ async function main() {
 
 微信中可用的斜杠命令:
   /clear        清空当前对话历史，开始新的对话
-  /help         显示帮助信息
-  /stop         停止 AI 当前的回复（打断输出）
+  /help         显示此帮助信息
+  /stop         停止 AI 当前的回复（打断输出）⭐
   /echo <msg>   直接回复消息（不经过 AI）
-  /toggle-debug 开关 debug 模式`);
+  /toggle-debug 开关 debug 模式
+
+⭐ /stop 命令说明：
+  当 AI 正在回复时发送 /stop，会立即中断 AI 的输出并杀死进程。
+  已生成但未发送的内容会被丢弃。`);
 }
 
 main().catch((err) => {

@@ -13,10 +13,13 @@ import { logger } from "../util/logger.js";
 
 import { toggleDebugMode, isDebugMode } from "./debug-mode.js";
 import { sendMessageWeixin } from "./send.js";
+import { stopOngoingRequest, hasOngoingRequest } from "./ongoing-requests.js";
 
 export interface SlashCommandResult {
   /** 是否是斜杠指令（true 表示已处理，不需要继续走 AI） */
   handled: boolean;
+  /** 是否应该跳过 agent.chat() 调用 */
+  skipAgentCall?: boolean;
 }
 
 export interface SlashCommandContext {
@@ -29,8 +32,6 @@ export interface SlashCommandContext {
   errLog: (msg: string) => void;
   /** Called when /clear is invoked to reset the agent session. */
   onClear?: () => void;
-  /** Called when /stop is invoked to stop the current AI response. */
-  onStop?: () => void;
 }
 
 /** 发送回复消息 */
@@ -66,24 +67,46 @@ async function handleEcho(
 }
 
 /** 发送帮助信息 */
-const HELP_TEXT = `🤖 微信 AI 助手 - 可用命令
+const HELP_TEXT = `🤖 微信 AI 助手 - 可用命令 [版本：0.6.0-mod]
 
 /clear        清空当前对话历史，开始新的对话
 /help         显示此帮助信息
-/stop         停止 AI 当前的回复（打断输出）
+/stop         停止 AI 当前的回复（打断输出）⭐
 /echo <msg>   直接回复消息（不经过 AI）
 /toggle-debug 开关 debug 模式
 
-直接发送消息即可与 AI 对话。`;
+直接发送消息即可与 AI 对话。
+
+⭐ /stop 命令说明：
+   当 AI 正在回复时发送 /stop，会立即中断 AI 的输出。
+   必须在 AI 回复期间发送才有效。`;
 
 async function handleHelp(ctx: SlashCommandContext): Promise<void> {
   await sendReply(ctx, HELP_TEXT);
 }
 
-/** 处理 /stop 指令 */
+/** 处理 /stop 指令 - 立即停止正在进行的 AI 请求 */
 async function handleStop(ctx: SlashCommandContext): Promise<void> {
-  ctx.onStop?.();
-  await sendReply(ctx, "⏹️ 已停止 AI 回复。");
+  const conversationId = ctx.to;
+  
+  logger.info(`[slash-command] /stop called for conversation=${conversationId}`);
+  
+  // 检查是否有正在进行的请求
+  const hasOngoing = hasOngoingRequest(conversationId);
+  logger.info(`[slash-command] hasOngoingRequest=${hasOngoing}`);
+  
+  if (hasOngoing) {
+    const stopped = stopOngoingRequest(conversationId);
+    logger.info(`[slash-command] stopOngoingRequest returned=${stopped}`);
+    
+    if (stopped) {
+      await sendReply(ctx, "⏹️ 已停止 AI 回复。");
+    } else {
+      await sendReply(ctx, "⚠️ 停止失败，请再试一次。");
+    }
+  } else {
+    await sendReply(ctx, "⚠️ 当前没有正在进行的 AI 回复。");
+  }
 }
 
 /**
@@ -99,7 +122,7 @@ export async function handleSlashCommand(
 ): Promise<SlashCommandResult> {
   const trimmed = content.trim();
   if (!trimmed.startsWith("/")) {
-    return { handled: false };
+    return { handled: false, skipAgentCall: false };
   }
 
   const spaceIdx = trimmed.indexOf(" ");
@@ -112,7 +135,7 @@ export async function handleSlashCommand(
     switch (command) {
       case "/echo":
         await handleEcho(ctx, args, receivedAt, eventTimestamp);
-        return { handled: true };
+        return { handled: true, skipAgentCall: true };
       case "/toggle-debug": {
         const enabled = toggleDebugMode(ctx.accountId);
         await sendReply(
@@ -121,23 +144,24 @@ export async function handleSlashCommand(
             ? "Debug 模式已开启"
             : "Debug 模式已关闭",
         );
-        return { handled: true };
+        return { handled: true, skipAgentCall: true };
       }
       case "/clear": {
         ctx.onClear?.();
         await sendReply(ctx, "✅ 会话已清除，重新开始对话");
-        return { handled: true };
+        return { handled: true, skipAgentCall: true };
       }
       case "/help": {
         await handleHelp(ctx);
-        return { handled: true };
+        return { handled: true, skipAgentCall: true };
       }
       case "/stop": {
         await handleStop(ctx);
-        return { handled: true };
+        // /stop 命令需要跳过当前消息的 agent 调用，但不停止其他消息的处理
+        return { handled: true, skipAgentCall: true };
       }
       default:
-        return { handled: false };
+        return { handled: false, skipAgentCall: false };
     }
   } catch (err) {
     logger.error(`[weixin] Slash command error: ${String(err)}`);
@@ -146,6 +170,6 @@ export async function handleSlashCommand(
     } catch {
       // 发送错误消息也失败了，只能记日志
     }
-    return { handled: true };
+    return { handled: true, skipAgentCall: true };
   }
 }
