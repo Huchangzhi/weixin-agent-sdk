@@ -18,12 +18,15 @@ export class AcpAgent implements Agent {
   private connection: AcpConnection;
   private sessions = new Map<string, SessionId>();
   private options: AcpAgentOptions;
+  /** Track ongoing prompts so they can be cancelled via /stop */
+  private ongoingPrompts = new Map<string, AbortController>();
 
   constructor(options: AcpAgentOptions) {
     this.options = options;
     this.connection = new AcpConnection(options, () => {
       log("subprocess exited, clearing session cache");
       this.sessions.clear();
+      this.ongoingPrompts.clear();
     });
   }
 
@@ -45,10 +48,16 @@ export class AcpAgent implements Agent {
 
     const collector = new ResponseCollector();
     this.connection.registerCollector(sessionId, collector);
+    
+    // Create an abort controller for this prompt (used by /stop)
+    const abortController = new AbortController();
+    this.ongoingPrompts.set(request.conversationId, abortController);
+    
     try {
       await conn.prompt({ sessionId, prompt: blocks });
     } finally {
       this.connection.unregisterCollector(sessionId);
+      this.ongoingPrompts.delete(request.conversationId);
     }
 
     const response = await collector.toResponse();
@@ -87,10 +96,26 @@ export class AcpAgent implements Agent {
   }
 
   /**
+   * Stop the current ongoing response for a given conversation.
+   * This aborts the in-progress prompt request.
+   */
+  stop(conversationId: string): void {
+    const abortController = this.ongoingPrompts.get(conversationId);
+    if (abortController) {
+      log(`stopping ongoing response for conversation=${conversationId}`);
+      abortController.abort();
+      this.ongoingPrompts.delete(conversationId);
+    } else {
+      log(`no ongoing response to stop for conversation=${conversationId}`);
+    }
+  }
+
+  /**
    * Kill the ACP subprocess and clean up all sessions.
    */
   dispose(): void {
     this.sessions.clear();
+    this.ongoingPrompts.clear();
     this.connection.dispose();
   }
 }

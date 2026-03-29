@@ -86,12 +86,19 @@ async function main() {
 用法:
   npx weixin-acp login                          扫码登录微信
   npx weixin-acp logout                         退出登录
-  npx weixin-acp claude-code                     使用 Claude Code
-  npx weixin-acp codex                           使用 Codex
-  npx weixin-acp start -- <command> [args...]    使用自定义 agent
+  npx weixin-acp claude-code                    使用 Claude Code
+  npx weixin-acp codex                          使用 Codex
+  npx weixin-acp start -- <command> [args...]   使用自定义 agent
 
 示例:
-  npx weixin-acp start -- node ./my-agent.js`);
+  npx weixin-acp start -- node ./my-agent.js
+
+微信中可用的斜杠命令:
+  /clear        清空当前对话历史，开始新的对话
+  /help         显示帮助信息
+  /stop         停止 AI 当前的回复（打断输出）
+  /echo <msg>   直接回复消息（不经过 AI）
+  /toggle-debug 开关 debug 模式`);
 }
 
 main().catch((err) => {

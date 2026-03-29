@@ -11,6 +11,8 @@ export interface Agent {
   chat(request: ChatRequest): Promise<ChatResponse>;
   /** Clear/reset the session for a given conversation. */
   clearSession?(conversationId: string): void;
+  /** Stop the current ongoing response for a given conversation (interrupt streaming). */
+  stop?(conversationId: string): void;
 }
 
 export interface ChatRequest {

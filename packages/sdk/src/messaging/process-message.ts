@@ -122,6 +122,7 @@ export async function processOneMessage(
         log: deps.log,
         errLog: deps.errLog,
         onClear: () => deps.agent.clearSession?.(conversationId),
+        onStop: () => deps.agent.stop?.(conversationId),
       },
       receivedAt,
       full.create_time_ms,

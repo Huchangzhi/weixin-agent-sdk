@@ -5,6 +5,8 @@
  * - /echo <message>         直接回复消息（不经过 AI），并附带通道耗时统计
  * - /toggle-debug           开关 debug 模式，启用后每条 AI 回复追加全链路耗时
  * - /clear                  清除当前会话，重新开始对话
+ * - /help                   显示帮助信息
+ * - /stop                   停止 AI 当前的回复（打断输出）
  */
 import type { WeixinApiOptions } from "../api/api.js";
 import { logger } from "../util/logger.js";
@@ -27,6 +29,8 @@ export interface SlashCommandContext {
   errLog: (msg: string) => void;
   /** Called when /clear is invoked to reset the agent session. */
   onClear?: () => void;
+  /** Called when /stop is invoked to stop the current AI response. */
+  onStop?: () => void;
 }
 
 /** 发送回复消息 */
@@ -54,11 +58,32 @@ async function handleEcho(
   const platformDelay = eventTs > 0 ? `${receivedAt - eventTs}ms` : "N/A";
   const timing = [
     "⏱ 通道耗时",
-    `├ 事件时间: ${eventTs > 0 ? new Date(eventTs).toISOString() : "N/A"}`,
-    `├ 平台→插件: ${platformDelay}`,
-    `└ 插件处理: ${Date.now() - receivedAt}ms`,
+    `├ 事件时间：${eventTs > 0 ? new Date(eventTs).toISOString() : "N/A"}`,
+    `├ 平台→插件：${platformDelay}`,
+    `└ 插件处理：${Date.now() - receivedAt}ms`,
   ].join("\n");
   await sendReply(ctx, timing);
+}
+
+/** 发送帮助信息 */
+const HELP_TEXT = `🤖 微信 AI 助手 - 可用命令
+
+/clear        清空当前对话历史，开始新的对话
+/help         显示此帮助信息
+/stop         停止 AI 当前的回复（打断输出）
+/echo <msg>   直接回复消息（不经过 AI）
+/toggle-debug 开关 debug 模式
+
+直接发送消息即可与 AI 对话。`;
+
+async function handleHelp(ctx: SlashCommandContext): Promise<void> {
+  await sendReply(ctx, HELP_TEXT);
+}
+
+/** 处理 /stop 指令 */
+async function handleStop(ctx: SlashCommandContext): Promise<void> {
+  ctx.onStop?.();
+  await sendReply(ctx, "⏹️ 已停止 AI 回复。");
 }
 
 /**
@@ -103,13 +128,21 @@ export async function handleSlashCommand(
         await sendReply(ctx, "✅ 会话已清除，重新开始对话");
         return { handled: true };
       }
+      case "/help": {
+        await handleHelp(ctx);
+        return { handled: true };
+      }
+      case "/stop": {
+        await handleStop(ctx);
+        return { handled: true };
+      }
       default:
         return { handled: false };
     }
   } catch (err) {
     logger.error(`[weixin] Slash command error: ${String(err)}`);
     try {
-      await sendReply(ctx, `❌ 指令执行失败: ${String(err).slice(0, 200)}`);
+      await sendReply(ctx, `❌ 指令执行失败：${String(err).slice(0, 200)}`);
     } catch {
       // 发送错误消息也失败了，只能记日志
     }
