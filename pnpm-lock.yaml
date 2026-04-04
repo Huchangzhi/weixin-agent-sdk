@@ -12,11 +12,51 @@ importers:
     dependencies:
       openai:
         specifier: ^4.0.0
-        version: 4.104.0
+        version: 4.104.0(ws@8.20.0)
       weixin-agent-sdk:
         specifier: workspace:*
         version: link:../sdk
     devDependencies:
+      tsx:
+        specifier: ^4.0.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
+  packages/qqbot-acp:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^0.17.0
+        version: 0.17.0(zod@4.3.6)
+      '@zed-industries/claude-agent-acp':
+        specifier: ^0.23.0
+        version: 0.23.0
+      '@zed-industries/codex-acp':
+        specifier: ^0.10.0
+        version: 0.10.0
+      cross-spawn:
+        specifier: ^7.0.6
+        version: 7.0.6
+      weixin-agent-sdk:
+        specifier: workspace:*
+        version: link:../sdk
+      ws:
+        specifier: ^8.18.0
+        version: 8.20.0
+    devDependencies:
+      '@types/cross-spawn':
+        specifier: ^6.0.6
+        version: 6.0.6
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+      '@types/ws':
+        specifier: ^8.5.0
+        version: 8.18.1
+      tsdown:
+        specifier: ^0.21.0
+        version: 0.21.4(typescript@5.9.3)
       tsx:
         specifier: ^4.0.0
         version: 4.21.0
@@ -513,6 +553,9 @@ packages:
   '@types/node@22.19.15':
     resolution: {integrity: sha512-F0R/h2+dsy5wJAUe3tAU6oqa2qbWY5TpNfL/RGmo1y38hiyO1w3x2jPtt76wmuaJI4DQnOBu21cNXQ2STIUUWg==}
 
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
   '@zed-industries/claude-agent-acp@0.23.0':
     resolution: {integrity: sha512-Ng6Ht35u0vZA+rH/5fnFAKKKHTidKciuwAMDS/nYrOHnCh5/d7E3Xa2YFtNrDKYraZzAjwTXDRVqH3Zp5uarlA==}
     hasBin: true
@@ -882,6 +925,18 @@ packages:
     engines: {node: '>= 8'}
     hasBin: true
 
+  ws@8.20.0:
+    resolution: {integrity: sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   zod@4.3.6:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
@@ -1185,6 +1240,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 22.19.15
+
   '@zed-industries/claude-agent-acp@0.23.0':
     dependencies:
       '@agentclientprotocol/sdk': 0.17.0(zod@4.3.6)
@@ -1387,7 +1446,7 @@ snapshots:
 
   obug@2.1.1: {}
 
-  openai@4.104.0:
+  openai@4.104.0(ws@8.20.0):
     dependencies:
       '@types/node': 18.19.130
       '@types/node-fetch': 2.6.13
@@ -1396,6 +1455,8 @@ snapshots:
       form-data-encoder: 1.7.2
       formdata-node: 4.4.1
       node-fetch: 2.7.0
+    optionalDependencies:
+      ws: 8.20.0
     transitivePeerDependencies:
       - encoding
 
@@ -1532,5 +1593,7 @@ snapshots:
   which@2.0.2:
     dependencies:
       isexe: 2.0.0
+
+  ws@8.20.0: {}
 
   zod@4.3.6: {}
