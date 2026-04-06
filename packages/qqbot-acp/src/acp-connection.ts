@@ -51,13 +51,14 @@ export class AcpConnection {
   }
 
   registerOngoingPrompt(sessionId: SessionId, abortController: AbortController): void {
-    const entry = { abortController };
-    this.ongoingPrompts.set(sessionId, entry);
-
+    let reject: ((err: Error) => void) | undefined;
+    const abortPromise = new Promise<never>((_, rej) => { reject = rej; });
     abortController.signal.addEventListener('abort', () => {
       logger.info(`[acp] abort signal received for session=${sessionId}`);
-      entry.reject?.(new Error('stopped'));
+      reject?.(new Error('stopped'));
     }, { once: true });
+
+    this.ongoingPrompts.set(sessionId, { abortController, reject });
   }
 
   unregisterOngoingPrompt(sessionId: SessionId): void {

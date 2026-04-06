@@ -151,12 +151,20 @@ export async function processQQMessage(
 
     logger.error(`[qqbot:${accountId}] Agent error: ${err}`);
     try {
+      // Try to extract a readable error message
+      let errorMsg = "未知错误";
+      if (err instanceof Error) {
+        errorMsg = err.message;
+      } else if (typeof err === "object" && err !== null) {
+        const obj = err as Record<string, unknown>;
+        errorMsg = (obj.message as string) || JSON.stringify(err).slice(0, 200);
+      }
       await sendQQTextMessage({
         appId,
         clientSecret,
         to: sendTarget,
         targetType: sendTargetType,
-        text: `⚠️ 处理消息失败：${err instanceof Error ? err.message : "未知错误"}`,
+        text: `⚠️ AI 处理失败：${errorMsg}`,
         msgId: messageId,
       });
     } catch (sendErr) {

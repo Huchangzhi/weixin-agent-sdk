@@ -3,4 +3,8 @@ export interface AcpAgentOptions {
   command: string;
   /** ACP agent arguments */
   args?: string[];
+  /** Working directory for the subprocess */
+  cwd?: string;
+  /** Environment variables to merge into subprocess */
+  env?: Record<string, string>;
 }

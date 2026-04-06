@@ -11,16 +11,35 @@ import { logger } from "./util/logger.js";
 const stoppedConversations = new Map<string, boolean>();
 
 /**
+ * Check if an error is an ACP authentication error.
+ */
+function isAuthError(err: unknown): boolean {
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    return msg.includes("authentication") || msg.includes("credential") || msg.includes("token expired") || msg.includes("unauthorized");
+  }
+  if (typeof err === "object" && err !== null) {
+    const obj = err as Record<string, unknown>;
+    const msg = String(obj.message ?? "").toLowerCase();
+    return msg.includes("authentication") || msg.includes("credential") || msg.includes("token expired") || msg.includes("unauthorized");
+  }
+  return false;
+}
+
+/**
  * Agent adapter that bridges ACP (Agent Client Protocol) agents
  * to the weixin-agent-sdk Agent interface.
+ * Automatically restarts the subprocess on auth errors (up to 3 retries).
  */
 export class AcpAgent implements Agent {
   private connection: AcpConnection;
   private sessions = new Map<string, SessionId>();
+  private options: AcpAgentOptions;
   /** Track the current chat promise for each conversation to allow interruption */
   private currentChatAbort = new Map<string, AbortController>();
 
   constructor(options: AcpAgentOptions) {
+    this.options = options;
     this.connection = new AcpConnection(options, () => {
       logger.info("[acp] subprocess exited, clearing session cache");
       this.sessions.clear();
@@ -35,6 +54,39 @@ export class AcpAgent implements Agent {
     if (stoppedConversations.get(conversationId)) {
       logger.info(`[acp] conversation ${conversationId} was stopped (pre-check), aborting`);
       throw new Error('stopped');
+    }
+
+    const maxRetries = 3;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await this.doChat(request, conversationId, attempt > 0);
+      } catch (err) {
+        lastError = err;
+
+        // Check if it's an auth error and we can retry
+        if (isAuthError(err) && attempt < maxRetries - 1) {
+          logger.warn(`[acp] auth error detected (attempt ${attempt + 1}/${maxRetries}), restarting subprocess...`);
+          this.connection.killProcess();
+          this.sessions.clear();
+          this.currentChatAbort.clear();
+          // Small delay before restart
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+
+        // Non-auth error or max retries reached
+        throw err;
+      }
+    }
+
+    throw lastError!;
+  }
+
+  private async doChat(request: ChatRequest, conversationId: string, isRetry: boolean): Promise<ChatResponse> {
+    if (isRetry) {
+      logger.info(`[acp] retry after subprocess restart for conversation=${conversationId}`);
     }
 
     const conn = await this.connection.ensureReady();
