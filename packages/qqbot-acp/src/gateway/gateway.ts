@@ -2,6 +2,8 @@ import type { Agent } from "weixin-agent-sdk";
 import { getAccessToken } from "./api.js";
 import { processQQMessage } from "./process-message.js";
 import { logger } from "../util/logger.js";
+import fs from "node:fs";
+import path from "node:path";
 
 // QQ Bot intents
 const INTENTS = {
@@ -70,6 +72,17 @@ export async function startQQBotGateway(opts: QQBotGatewayOpts): Promise<void> {
   }
 
   log(`[qqbot:${accountId}] Starting Gateway...`);
+
+  // Ensure pushphoto directory exists
+  const pushPhotoDir = path.resolve("./pushphoto");
+  try {
+    if (!fs.existsSync(pushPhotoDir)) {
+      fs.mkdirSync(pushPhotoDir, { recursive: true });
+      log(`[qqbot:${accountId}] Pushphoto directory created: ${pushPhotoDir}`);
+    }
+  } catch (err) {
+    log(`[qqbot:${accountId}] Failed to create pushphoto directory: ${err}`);
+  }
 
   // Dynamic import ws
   const { default: WebSocket } = await import("ws");

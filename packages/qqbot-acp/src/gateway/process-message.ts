@@ -1,11 +1,109 @@
 import type { Agent, ChatRequest, ChatResponse } from "weixin-agent-sdk";
-import { sendQQTextMessage } from "./api.js";
+import { sendQQTextMessage, sendQQImageMessage } from "./api.js";
 import { extractMediaFromEvent } from "./media-download.js";
 import { logger } from "../util/logger.js";
+import fs from "node:fs";
+import path from "node:path";
 
 // Slash command state
 const stoppedConversations = new Set<string>();
 const debugMode = new Set<string>();
+
+// PushPhoto configuration
+const PUSH_PHOTO_DIR = "./pushphoto";
+
+/** Image file extensions to detect in pushphoto folder */
+const IMAGE_EXTENSIONS = new Set([
+  ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".tiff", ".tif", ".ico",
+]);
+
+/**
+ * Check if a filename is an image file (case-insensitive).
+ */
+function isImageFile(filename: string): boolean {
+  const ext = path.extname(filename).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext);
+}
+
+/**
+ * Check the pushphoto folder for image files and send them.
+ * Returns the list of sent image paths for cleanup.
+ */
+async function checkAndSendPushPhotos(params: {
+  appId: string;
+  clientSecret: string;
+  sendTarget: string;
+  sendTargetType: "c2c" | "group" | "dm" | "channel";
+  text: string;
+  msgId: string;
+  log: (msg: string) => void;
+}): Promise<string[]> {
+  const sentPaths: string[] = [];
+
+  try {
+    // Check if pushphoto folder exists
+    const folderPath = path.resolve(PUSH_PHOTO_DIR);
+    let files: string[];
+    try {
+      files = fs.readdirSync(folderPath);
+    } catch {
+      // Folder doesn't exist, return early
+      return [];
+    }
+
+    // Filter for image files (case-insensitive)
+    const imageFiles = files.filter(isImageFile);
+    if (imageFiles.length === 0) {
+      return [];
+    }
+
+    params.log(`[pushphoto] found ${imageFiles.length} image(s) in pushphoto folder`);
+
+    // Send each image with the AI response text
+    let textToSend = params.text;
+    for (const filename of imageFiles) {
+      const filePath = path.join(folderPath, filename);
+      try {
+        params.log(`[pushphoto] sending image: ${filename}`);
+        await sendQQImageMessage({
+          appId: params.appId,
+          clientSecret: params.clientSecret,
+          to: params.sendTarget,
+          targetType: params.sendTargetType,
+          imagePath: filePath,
+          text: textToSend,
+          // Don't pass msgId for pushphoto images to avoid duplicate msgseq error
+          // (the text reply already used the msgId)
+          msgId: undefined,
+        });
+        sentPaths.push(filePath);
+        // Only send text with the first image
+        textToSend = "";
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.stack || err.message : String(err);
+        params.log(`[pushphoto] failed to send image ${filename}: ${errorMsg}`);
+      }
+    }
+  } catch (err) {
+    params.log(`[pushphoto] error checking pushphoto folder: ${err}`);
+  }
+
+  return sentPaths;
+}
+
+/**
+ * Delete files from the pushphoto folder after sending.
+ */
+async function cleanupPushPhotos(filePaths: string[], log: (msg: string) => void): Promise<void> {
+  for (const filePath of filePaths) {
+    try {
+      fs.unlinkSync(filePath);
+      log(`[pushphoto] deleted: ${path.basename(filePath)}`);
+    } catch (err) {
+      log(`[pushphoto] failed to delete ${filePath}: ${err}`);
+    }
+  }
+}
 
 export interface QQMessage {
   type: "c2c" | "group" | "dm" | "channel";
@@ -142,6 +240,22 @@ export async function processQQMessage(
         text: response.text,
         msgId: messageId,
       });
+    }
+
+    // Check pushphoto folder for images and send them
+    const sentImagePaths = await checkAndSendPushPhotos({
+      appId,
+      clientSecret,
+      sendTarget,
+      sendTargetType,
+      text: response.text || "",
+      msgId: messageId,
+      log,
+    });
+
+    // Clean up sent images from pushphoto folder
+    if (sentImagePaths.length > 0) {
+      await cleanupPushPhotos(sentImagePaths, log);
     }
   } catch (err) {
     if (err instanceof Error && err.message === "stopped") {
